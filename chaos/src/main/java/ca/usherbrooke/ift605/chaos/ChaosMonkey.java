@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -322,12 +323,28 @@ public final class ChaosMonkey {
         }
     }
 
+    /**
+     * Formate un instant en heure locale ISO-8601 avec décalage horaire
+     * (ex. {@code 2026-11-10T21:52:07.974-05:00}).
+     *
+     * @param epochMs instant en millisecondes depuis l'époque Unix
+     * @return l'heure formatée, ou une chaîne vide si l'événement n'a pas eu lieu (valeur &lt;= 0)
+     */
+    private static String heure(long epochMs) {
+        return epochMs > 0
+                ? Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).toOffsetDateTime().toString()
+                : "";
+    }
+
     private void ecrireResultats() {
         completerDepuisJournal();
         Path csv = MeshConfig.DOSSIER_RESULTATS.resolve("chaos-" + label + ".csv");
         Path resume = MeshConfig.DOSSIER_RESULTATS.resolve("chaos-" + label + "-resume.txt");
-        StringBuilder sb = new StringBuilder("iteration,label,scenario,service,instance,t_panne_iso,"
-                + "delai_detection_ms,detecte_15s,action,mttr_depuis_panne_ms,mttr_depuis_detection_ms,"
+        // Colonnes exigées par l'énoncé : service ciblé, heure de la panne, heure de détection,
+        // action choisie et heure de récupération. Les durées dérivées suivent.
+        StringBuilder sb = new StringBuilder("iteration,label,scenario,service,instance,"
+                + "heure_panne,heure_detection,action,heure_recuperation,"
+                + "delai_detection_ms,detecte_15s,mttr_depuis_panne_ms,mttr_depuis_detection_ms,"
                 + "cycles_mapek,faux_positif\n");
         for (Injection inj : injections) {
             long det = inj.tDetection > 0 ? inj.tDetection - inj.tPanne : -1;
@@ -335,8 +352,8 @@ public final class ChaosMonkey {
             long mttrDet = inj.tRecuperation > 0 && inj.tDetection > 0
                     ? Math.max(0, inj.tRecuperation - inj.tDetection) : -1;
             sb.append(String.join(",", Integer.toString(inj.iteration), label, inj.scenario.name(), inj.service,
-                    inj.instance, Instant.ofEpochMilli(inj.tPanne).toString(), Long.toString(det),
-                    Boolean.toString(det >= 0 && det <= 15_000), inj.action, Long.toString(mttrPanne),
+                    inj.instance, heure(inj.tPanne), heure(inj.tDetection), inj.action, heure(inj.tRecuperation),
+                    Long.toString(det), Boolean.toString(det >= 0 && det <= 15_000), Long.toString(mttrPanne),
                     Long.toString(mttrDet), Long.toString(inj.cycles),
                     inj.fauxPositif == null ? "" : inj.fauxPositif.toString())).append('\n');
         }
